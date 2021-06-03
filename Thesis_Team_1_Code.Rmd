@@ -1,0 +1,466 @@
+---
+title: "Analysis of Incentives in Sustainable Fashion Brand Communities"
+author: "Team 1 - Camila Cordova, Victoria Garcia, Manya Arora"
+date: "27/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading packages, Functions, and Data
+
+```{r results = F, warning=F, message=F}
+############### ANALYSIS OF DATA FROM QUALTRICS ###############
+
+library(data.table)
+library(tidyverse)
+library(dplyr)
+library(tidyselect)
+if(!require(gridExtra)) install.packages('gridExtra')
+
+##############################        LOAD DATA      ###########################
+
+dt <- fread('Final Thesis Suvey.csv', stringsAsFactors = F, header = T) %>% 
+  as_tibble()
+
+```
+
+## Inspect and clean data
+
+See what the table looks like and the column names:
+
+```{r warning=F, message=F}
+
+dt
+colnames(dt)
+
+```
+
+
+### Removing unusable answers
+
+We need to remove the first two lines that are not useful for our analysis, but we will save the first line, because it contains the descriptions of our variables.
+
+```{r warning=F, message=F}
+
+dt_question_labels <- dt %>% slice(1)
+
+dt_question_labels <- dt_question_labels %>% 
+  t() %>%
+   as.data.frame() %>% 
+   mutate(Label = rownames(.))
+
+(dt <- dt %>% 
+  slice(-c(1,2)))
+
+```
+
+We need to make sure that everyone finished the survey. If someone did not finish, we cannot analyse the data. If you have many people (i.e. > 3 people) who did not finish, let me know.
+
+```{r warning=F, message=F}
+
+dt %>% 
+  group_by(Finished) %>%
+  summarise(n = n())
+
+# If you have 'False' in the result, kick out those people
+
+dt <- dt %>% 
+  filter(Finished == TRUE)
+
+```
+
+
+We also need to remove the answers that were given in "Preview" mode or "Test" mode, because those are not collected from the experimental sample.
+
+```{r eval = F,warning=F, message=F}
+
+dt <- dt %>% 
+  filter(!(Status %in% c('Survey Preview', 'Survey Test')))
+
+```
+
+We want to give distinctive names to our questions.
+
+```{r warning=F, message=F}
+
+dt <- dt %>% 
+  rename(Participation1a = Q6, Brand_reputation1a = Q7, Brand_reputation1b = Q8, Participation1b = Q15, Commitment1a = Q16, Social_cause_interest_c = Q80, Reward_c = Q81, Theoretical_domain_c = Q82, Social_cause_interest_c2 = Q83, Attention_check_c = Q79, Commitment_c = Q84, Theoretical_domain_c2 = Q87,
+         Participation2a = Q21, Brand_reputation2a = Q22, Brand_reputation2b = Q23, Participation2b = Q30, Commitment2a = Q31, Participation2c = Q59,
+         Participation3a = Q36, Brand_reputation3a = Q38, Brand_reputation3b = Q39, Participation3b = Q46, Commitment3a = Q47, Participation3c = Q60, Ease_of_use = Q37, Age = Q48, Gender = Q49, Nationality = Q50, Occupation = Q51)
+
+```
+
+Then we need to transform likert scales into numeric vectors.
+
+vars_to_transform <- c('Participation1a',
+
+                      'Participation1b',
+
+                      'Participation2a',
+
+                      'Participation2b',
+
+                      'Participation2c',
+
+                      'Participation3a',
+
+                      'Participation3b',
+
+                      'Participation3c',
+
+                      'Brand_reputation1a',
+
+                      'Brand_reputation1b',
+
+                      'Brand_reputation2a',
+
+                      'Brand_reputation2b',
+
+                      'Brand_reputation3a',
+
+                      'Brand_reputation3b',
+
+                      'Social_cause_interest_c',
+
+                      'Social_cause_interest_c2',
+
+                      'Reward_c',
+
+                      'Attention_check_c',
+
+                      'Commitment_c',
+
+                      'Commitment1a',
+
+                      'Commitment2a',
+
+                      'Commitment3a',
+
+                      'Ease_of_use')
+
+ 
+
+dt <- dt %>%
+
+  #First transform empty values into NA
+
+  mutate_all(., function(x) ifelse(x == '', NA, x)) %>%
+
+  #Then make first factor, then numeric
+
+  mutate_at(.vars = all_of(vars_to_transform),
+
+            .funs = function(x) as.numeric(as.factor(x)))
+```{r warning=T, message=F}
+
+dt <- dt %>% 
+  mutate_at(.vars = c('Participation1a', 'Brand_reputation1a', 'Brand_reputation1b', 'Participation1b', 'Commitment1a', 'Social_cause_interest_c', 'Reward_c', 'Social_cause_interest_c2', 'Attention_check_c', 'Commitment_c',
+         'Participation2a', 'Brand_reputation2a', 'Brand_reputation2b', 'Participation2b', 'Commitment2a', 'Participation2c',
+         'Participation3a', 'Brand_reputation3a', 'Brand_reputation3b', 'Participation3b', 'Commitment3a', 'Participation3c', 'Ease_of_use'), .funs = as.numeric)
+
+```
+
+### Control variables
+
+You need to transform the interval variables into factors
+
+```{r warning=F, message=F}
+dt <- dt %>% 
+  mutate_at(c('Age', 'Gender', 'Nationality', 'Occupation'), as.factor) 
+```
+
+And the binary variables into 0/1 variables
+
+```{r warning=F, message=F}
+dt <- dt %>% 
+  mutate(Theoretical_domain_c = ifelse(Theoretical_domain_c == 'Yes', 1, 0))
+dt <- dt %>% 
+  mutate(Theoretical_domain_c2 = ifelse(Theoretical_domain_c2 == 'Yes', 1, 0))
+```
+
+### Missing values
+
+We need to check that there are no missing data in the treatment. Here you can find the responses with missing data in the treatment, and identify the respondentID. These responses are not usable since there is no treatment.
+
+If you find missing data, you need to understand the cause of the missing data ASAP. You will need to comment on the reason for missing data in the results section of the thesis.
+
+
+```{r warning=F}
+
+(test_NA <- dt %>% 
+  select(Participation1a, Brand_reputation1a, Brand_reputation1b, Participation1b, Commitment1a, Social_cause_interest_c, Reward_c, Theoretical_domain_c, Social_cause_interest_c2, Attention_check_c, Commitment_c, Theoretical_domain_c2,
+         Participation2a, Brand_reputation2a, Brand_reputation2b, Participation2b, Commitment2a, Participation2c,
+         Participation3a, Brand_reputation3a, Brand_reputation3b, Participation3b, Commitment3a, Participation3c, Ease_of_use, Age, Gender, Nationality, Occupation) %>% 
+  bind_rows(tibble(Participation1a = NA, Brand_reputation1a = NA, Brand_reputation1b = NA, Participation1b = NA, Commitment1a = NA, Social_cause_interest_c = NA, Reward_c = NA, Theoretical_domain_c = NA, Social_cause_interest_c2 = NA, Attention_check_c = NA, Commitment_c = NA, Theoretical_domain_c2 = NA,
+         Participation2a = NA, Brand_reputation2a = NA, Brand_reputation2b = NA, Participation2b = NA, Commitment2a = NA, Participation2c = NA,
+         Participation3a = NA, Brand_reputation3a = NA, Brand_reputation3b = NA, Participation3b = NA, Commitment3a = NA, Participation3c = NA, Ease_of_use = NA, Age = NA, Gender = NA, Nationality = NA, Occupation = NA)) %>% 
+  rowwise() %>% 
+  mutate(sum = sum(Participation1a, Brand_reputation1a, Brand_reputation1b, Participation1b, Commitment1a, Social_cause_interest_c, Reward_c, Theoretical_domain_c, Social_cause_interest_c2, Attention_check_c, Commitment_c, Theoretical_domain_c2,
+         Participation2a, Brand_reputation2a, Brand_reputation2b, Participation2b, Commitment2a, Participation2c,
+         Participation3a, Brand_reputation3a, Brand_reputation3b, Participation3b, Commitment3a, Participation3c, Ease_of_use, Age, Gender, Nationality, Occupation, na.rm = T)) %>%
+  filter(sum == 0))
+
+# if you have missing data, you can collect the ID's here:
+
+if (sum(test_NA$sum != 0)) {
+  
+  message("Your data has missing values! Find the cause ASAP.")
+  
+  Missing_ids <- dt %>% 
+  select(Participation1a, Brand_reputation1a, Brand_reputation1b, Participation1b, Commitment1a, Social_cause_interest_c, Reward_c, Theoretical_domain_c, Social_cause_interest_c2, Attention_check_c, Commitment_c, Theoretical_domain_c2,
+         Participation2a, Brand_reputation2a, Brand_reputation2b, Participation2b, Commitment2a, Participation2c,
+         Participation3a, Brand_reputation3a, Brand_reputation3b, Participation3b, Commitment3a, Participation3c, Ease_of_use, Age, Gender, Nationality, Occupation) %>% 
+  bind_rows(tibble(Participation1a = NA, Brand_reputation1a = NA, Brand_reputation1b = NA, Participation1b = NA, Commitment1a = NA, Social_cause_interest_c = NA, Reward_c = NA, Theoretical_domain_c = NA, Social_cause_interest_c2 = NA, Attention_check_c = NA, Commitment_c = NA, Theoretical_domain_c2 = NA,
+         Participation2a = NA, Brand_reputation2a = NA, Brand_reputation2b = NA, Participation2b = NA, Commitment2a = NA, Participation2c = NA,
+         Participation3a = NA, Brand_reputation3a = NA, Brand_reputation3b = NA, Participation3b = NA, Commitment3a = NA, Participation3c = NA, Ease_of_use = NA, Age = NA, Gender = NA, Nationality = NA, Occupation = NA)) %>% 
+  rowwise() %>% 
+  mutate(sum = sum(Participation1a, Brand_reputation1a, Brand_reputation1b, Participation1b, Commitment1a, Social_cause_interest_c, Reward_c, Theoretical_domain_c, Social_cause_interest_c2, Attention_check_c, Commitment_c, Theoretical_domain_c2,
+         Participation2a, Brand_reputation2a, Brand_reputation2b, Participation2b, Commitment2a, Participation2c,
+         Participation3a, Brand_reputation3a, Brand_reputation3b, Participation3b, Commitment3a, Participation3c, Ease_of_use, Age, Gender, Nationality, Occupation, na.rm = T)) %>%
+  filter(sum == 0)
+  
+  Missing_ids <- Missing_ids$ResponseId
+  
+  # and remove them from the sample
+  
+  dt <- dt %>% 
+    filter(!(ResponseId %in% Missing_ids))
+  
+}
+
+suppressWarnings(rm(test_NA, Missing_ids)) #this one also doesn't work
+
+
+```
+
+
+### Treatment variables
+
+We need to add one more variable that indicates in which condition people are assigned. I have 2 treatments and 1 control group in this example. You may have 1 treatment and 1 control, or more treatments and 1 control. You can adjust the code to your case.
+
+```{r warning=F, message=F}
+dt <- dt %>% 
+  mutate(Condition = ifelse(!is.na(Participation1a), 'S1',
+                            ifelse(!is.na(Participation2a), 'S2',ifelse(!is.na(Participation3a),'S3',
+                                   'Control'))))
+
+```
+
+
+### Dependent variable
+
+You measured the DV separately in each block (treatment block and control block.
+
+**Your DV should have no missing values.**
+
+#### Case 1: You measured the DV separately in each block (treatment block and control block).
+
+If you measured the DV in the same block as the treatment, then we need to also add one variable with the value of the DV. 
+
+```{r warning=F, message=F}
+
+
+
+dt$DV<- rowMeans(dt %>% select(Participation1a, Participation1b, Participation2a, Participation2b, Participation2c, Participation3a, Participation3b, Participation3c), na.rm = T)
+
+
+```
+
+
+## Data Analysis: Unstandardized Betas
+
+### Mean difference without control questions
+
+<!-- We want to know if the mean responses in our treatment conditions significantly differ from our control group. We can do this with a regression analysis. -->
+
+```{r warning=F, message=F}
+
+fit1 <- lm(DV ~ 1 + Condition, data = dt)
+summary(fit1)
+
+library("car")
+
+```
+
+In this example, the people in condition T1 are on average less likely to give higher responses to the DV compared to the control group (beta coefficient is negative). People in condition T2 are on average more likely to give higher responses to the DV compared to the control group (beta coefficient is positive). However, the standard errors are large. Therefore, my effects overlap with zero.
+
+We can also visualize this result:
+
+```{r warning=F, message=F}
+
+summary(fit1)$coefficients %>% 
+  as.data.frame() %>% 
+  mutate(coefficient_names = rownames(.),
+         lower = Estimate-`Std. Error`, upper = Estimate+`Std. Error`) %>% 
+  filter(coefficient_names %in% c('ConditionS2', 'ConditionS3')) %>% 
+  ggplot(aes(x = coefficient_names, y = Estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1) +
+  geom_vline(xintercept = 0, color = 'black', linetype = 3) +
+  theme_minimal()+
+  coord_flip()
+
+```
+
+
+### Mean difference with control questions
+
+We can also add the control variables and check how our results change.
+
+```{r warning=F, message=F}
+
+fit2 <- lm(DV ~ 1 + Condition + Social_cause_interest_c + Social_cause_interest_c2 + Reward_c + Theoretical_domain_c + Theoretical_domain_c2 + Commitment_c + Age + Gender + Nationality + Occupation, data = dt)
+
+summary(fit2)
+vif(fit2)
+alias(fit2)
+```
+#TO DO: Remember to group all nationalities together 
+
+From the summary, we see that now both the treatment variables have a negative beta coefficient. So people respond on average lower to the DV in the 2 treatment conditions compared to the control condition. Again, in my example, both treatment beta's overlap with zero.
+
+We can also visualize this result:
+
+```{r warning=F, message=F}
+
+summary(fit2)$coefficients %>% 
+  as.data.frame() %>% 
+  mutate(coefficient_names = rownames(.),
+         lower = Estimate-`Std. Error`, upper = Estimate+`Std. Error`) %>% 
+  filter(coefficient_names %in% c('ConditionS2', 'ConditionS3')) %>% 
+  ggplot(aes(x = coefficient_names, y = Estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1) +
+  geom_vline(xintercept = 0, color = 'black', linetype = 3) +
+  theme_minimal()+
+  coord_flip()
+
+```
+
+
+### Control variables with interactions
+
+If you want to perform subgroup analysis, you can also add interaction terms.
+
+```{r warning=F, message=F}
+dt<- dt %>% 
+    mutate(Ease_of_use = ifelse(Ease_of_use > 2, 'Low', 
+                              ifelse(Ease_of_use <= 2, 'High', NA))) 
+
+fit2.1 <- lm(DV ~ 1 + factor(Ease_of_use) + Social_cause_interest_c + Social_cause_interest_c2 + Reward_c + Theoretical_domain_c + Theoretical_domain_c2 + Commitment_c + Age + Gender + tolower(Nationality) + Occupation, 
+             data = dt %>% filter(Condition=='S3'))
+
+summary(fit2.1)
+vif(fit2.1)
+alias(fit2.1)
+```
+
+Then we can visualize how all the subgroups are performing in the analysis. I will perform a subgroup analysis of 2 variables: age and internet use. You can do it with any other control question you have.
+
+### ERROR Gender Subgroup: nothing shows in the plot
+
+```{r warning=F, message=F}
+
+plotS2 <- summary(fit2.1)$coefficients %>% 
+  as.data.frame() %>% 
+  mutate(coefficient_names = rownames(.),
+         lower = Estimate-`Std. Error`, upper = Estimate+`Std. Error`) %>% 
+  filter(coefficient_names %like% c('Gender')) %>%
+  filter(coefficient_names %like% c('ConditionS2')) %>%
+  arrange(coefficient_names) %>% 
+  ggplot(aes(x = coefficient_names, y = Estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1) +
+  geom_vline(xintercept = 0, color = 'black', linetype = 3) +
+  theme_minimal() + coord_flip()
+
+plotS3 <- summary(fit2.1)$coefficients %>% 
+  as.data.frame() %>% 
+  mutate(coefficient_names = rownames(.),
+         lower = Estimate-`Std. Error`, upper = Estimate+`Std. Error`) %>% 
+  filter(coefficient_names %like% c('Gender')) %>%
+  filter(coefficient_names %like% c('ConditionS3')) %>%
+  arrange(coefficient_names) %>% 
+  ggplot(aes(x = coefficient_names, y = Estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = .1) +
+  geom_vline(xintercept = 0, color = 'black', linetype = 3) +
+  theme_minimal() + coord_flip()
+
+gridExtra::grid.arrange(plotS2, plotS3)
+
+```
+
+### ERROR Age Subgroup: nothing shows in the plot
+
+
+```{r warning=F, message=F}
+
+plotS2 <- summary(fit2.1)$coefficients %>% 
+  as.data.frame() %>% 
+  mutate(coefficient_names = rownames(.),
+         lower = Estimate-`Std. Error`, upper = Estimate+`Std. Error`) %>% 
+  filter(coefficient_names %like% c('Age')) %>%
+  filter(coefficient_names %like% c('ConditionS2')) %>%
+  arrange(coefficient_names) %>% 
+  ggplot(aes(y = coefficient_names, x = Estimate)) +
+  geom_point() +
+  geom_errorbar(aes(xmin = lower, xmax = upper), width = .1) +
+  geom_vline(xintercept = 0, color = 'black', linetype = 3) +
+  theme_minimal()
+
+plotS3 <- summary(fit2.1)$coefficients %>% 
+  as.data.frame() %>% 
+  mutate(coefficient_names = rownames(.),
+         lower = Estimate-`Std. Error`, upper = Estimate+`Std. Error`) %>% 
+  filter(coefficient_names %like% c('Age')) %>%
+  filter(coefficient_names %like% c('ConditionS3')) %>%
+  arrange(coefficient_names) %>% 
+  ggplot(aes(y = coefficient_names, x = Estimate)) +
+  geom_point() +
+  geom_errorbar(aes(xmin = lower, xmax = upper), width = .1) +
+  geom_vline(xintercept = 0, color = 'black', linetype = 3) +
+  theme_minimal()
+
+gridExtra::grid.arrange(plotS2, plotS3)
+```
+
+
+## Data Analysis: Standardized Betas
+
+In order to obtain standardized betas, we need to standardize our input variables. You can standardize all variables that are measured with a numerical scale.
+
+It doesn't help to standardize categorical (discrete) variables, measured with text or labels.
+
+### No control variables
+
+```{r warning=F, message=F}
+
+fit3 <- lm(scale(DV) ~ 1 + Condition, data = dt)
+
+summary(fit3)
+
+```
+
+
+### With Control Variables
+
+
+```{r warning=F, message=F}
+
+fit4 <- lm(scale(DV) ~ 1 + Condition + Social_cause_interest_c + Social_cause_interest_c2 + Reward_c + Theoretical_domain_c2 + Commitment_c  + Gender + tolower(Nationality) + Occupation, data = dt)
+
+summary(fit4)
+vif(fit4)
+alias(fit4)
+
+```
+#correlation analysis
+install.packages("ggpubr")
+library("ggpubr")
+
+cor.test(dt$Theoretical_domain_c, dt$Theoretical_domain_c2,  method = "pearson")
+cor.test(dt$Occupation, dt$Theoretical_domain_c2,  method = "spearman")
